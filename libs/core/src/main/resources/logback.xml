@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <property name="APP_NAME" value="${APP_NAME:-crypto-analyzer}" />
+    <property name="LOKI_URL" value="${LOKI_URL:-http://localhost:3100/loki/api/v1/push}" />
+    <property name="LOKI_USERNAME" value="${LOKI_USERNAME:-}" />
+    <property name="LOKI_PASSWORD" value="${LOKI_PASSWORD:-}" />
+    <property name="LOKI_TENANT_ID" value="${LOKI_TENANT_ID:-}" />
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} asset=%X{asset:-na} phase=%X{phase:-na} component=%X{component:-na} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="LOKI" class="com.github.loki4j.logback.Loki4jAppender">
+        <labels>
+            app=${APP_NAME}
+            host=${HOSTNAME}
+            level=%level
+        </labels>
+        <structuredMetadata>
+            logger=%logger
+            thread=%thread
+            asset=%X{asset}
+            phase=%X{phase}
+            component=%X{component}
+        </structuredMetadata>
+        <message>
+            <pattern>%msg</pattern>
+        </message>
+        <http>
+            <url>${LOKI_URL}</url>
+            <auth>
+                <username>${LOKI_USERNAME}</username>
+                <password>${LOKI_PASSWORD}</password>
+            </auth>
+            <tenantId>${LOKI_TENANT_ID}</tenantId>
+        </http>
+        <batch>
+            <maxItems>200</maxItems>
+            <timeoutMs>5000</timeoutMs>
+        </batch>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="LOKI" />
+    </root>
+</configuration>

@@ -1,0 +1,130 @@
+services:
+  price-ingestion:
+    build:
+      context: .
+      dockerfile: services/price-ingestion/Dockerfile
+    container_name: crypto-analyzer-price-ingestion
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_URL: jdbc:clickhouse://clickhouse:8123
+      CLICKHOUSE_DATABASE: crypto_analyzer
+      CLICKHOUSE_USERNAME: cryptoanalyzer
+      CLICKHOUSE_PASSWORD: cryptoanalyzer123
+      REDIS_HOST: redis
+      LOGGING_LOKI_URL: http://loki:3100/loki/api/v1/push
+      ANALYSIS_RUN_IN_LOOP: "true"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      loki:
+        condition: service_started
+
+  strategy-backtester:
+    build:
+      context: .
+      dockerfile: services/strategy-backtester/Dockerfile
+    container_name: crypto-analyzer-strategy-backtester
+    restart: "no"
+    environment:
+      CLICKHOUSE_URL: jdbc:clickhouse://clickhouse:8123
+      CLICKHOUSE_DATABASE: crypto_analyzer
+      CLICKHOUSE_USERNAME: cryptoanalyzer
+      CLICKHOUSE_PASSWORD: cryptoanalyzer123
+      REDIS_HOST: redis
+      LOGGING_LOKI_URL: http://loki:3100/loki/api/v1/push
+      ANALYSIS_RUN_IN_LOOP: "false"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      loki:
+        condition: service_started
+      price-ingestion:
+        condition: service_started
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: crypto-analyzer-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: crypto_analyzer
+      CLICKHOUSE_USER: cryptoanalyzer
+      CLICKHOUSE_PASSWORD: cryptoanalyzer123
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+    healthcheck:
+      test: [ "CMD", "clickhouse-client", "-u", "cryptoanalyzer", "--password", "cryptoanalyzer123", "--query", "SELECT 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  loki:
+    image: grafana/loki:latest
+    container_name: crypto-analyzer-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: [ "-config.file=/etc/loki/local-config.yaml" ]
+
+  redis:
+    image: redis:7
+    container_name: crypto-analyzer-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+      - ./redis/users.acl:/usr/local/etc/redis/users.acl:ro
+    command: [ "redis-server", "--appendonly", "yes", "--aclfile", "/usr/local/etc/redis/users.acl" ]
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: crypto-analyzer-redis-insight
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    volumes:
+      - redis-insight-data:/data
+    depends_on:
+      - redis
+
+  grafana:
+    image: grafana/grafana-enterprise
+    container_name: crypto-analyzer-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_PLUGINS_PREINSTALL: redis-datasource
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki
+      - redis
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: crypto-analyzer-portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer-data:/data
+
+volumes:
+  clickhouse-data:
+  redis-data:
+  redis-insight-data:
+  grafana-data:
+  portainer-data:
